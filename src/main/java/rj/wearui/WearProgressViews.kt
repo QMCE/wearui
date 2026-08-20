@@ -39,10 +39,10 @@ abstract class WearProgressBase(context: Context, attrs: AttributeSet?, defStyle
     protected var indeterminatePhase = 0f
     private var indeterminateAnimator: ValueAnimator? = null
     private var progressAnimator: ValueAnimator? = null
-    var strokeWidthDp: Int = 12
+    var strokeWidthDp: Int = ProgressIndicatorTokens.CircularLargeStrokeWidthDp.toInt()
         set(value) { field = value.coerceAtLeast(1); invalidate() }
     /** Stroke width used for the moving segment of the indeterminate animation. */
-    var indeterminateStrokeWidthDp: Int = 3
+    var indeterminateStrokeWidthDp: Int = ProgressIndicatorTokens.CircularIndeterminateStrokeWidthDp.toInt()
         set(value) { field = value.coerceAtLeast(1); invalidate() }
 
     init { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES }

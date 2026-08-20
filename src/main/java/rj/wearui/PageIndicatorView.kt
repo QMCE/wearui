@@ -47,8 +47,8 @@ class PageIndicatorView : View {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         isFocusable = true
         val density = resources.displayMetrics.density
-        dotRadius = 3f * density // 6dp diameter -> radius 3dp matches PageIndicatorItemSize 6dp
-        spacing = 4f * density // vendored PageIndicatorSpacing 4dp (not 12)
+        dotRadius = PageIndicatorTokens.IndicatorSizeDp/2f * density // PageIndicatorTokens 6dp -> radius 3dp matches PageIndicatorItemSize 6dp
+        spacing = PageIndicatorTokens.SpacingDp * density // vendored PageIndicatorSpacing 4dp (not 12)
         contentDescription = "Page indicator"
     }
 
@@ -105,7 +105,7 @@ class PageIndicatorView : View {
             paint.color = blend(inactiveColor, activeColor, 1f - distance)
             val x = if (vertical) width / 2f else offset + dotRadius + i * spacing
             val y = if (vertical) offset + dotRadius + i * spacing else height / 2f
-            canvas.drawCircle(x, y, dotRadius * (if (distance < .01f) 1f else 0.66f), paint)
+            canvas.drawCircle(x, y, dotRadius * (if (distance < .01f) 1f else PageIndicatorTokens.UnselectedAlpha), paint)
         }
     }
 

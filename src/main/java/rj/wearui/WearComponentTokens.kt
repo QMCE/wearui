@@ -177,3 +177,115 @@ object ListHeaderTokens {
     /** Optional supporting text below a header label. */
     val SupportingTypography: WearTypographyRole = WearTypographyRole.BodySmall
 }
+// ---------------------------------------------------------------------------
+// SliderTokens — dimensional mirror of vendored Slider/SliderDefaults (4dp/8dp)
+// ---------------------------------------------------------------------------
+/**
+ * Slider geometry. Vendored `SliderTokens` exposes only colors; dimensions live in
+ * `SliderView` defaults (`track 4dp, thumb 8dp`) and in wear's `SliderDefaults` helpers.
+ * These values are normalized here so `SliderView/InlineSlider` don't duplicate literals.
+ */
+object SliderTokens {
+    /** Track thickness (height of the bar). */
+    const val TrackWidthDp: Float = 4f
+    /** Thumb radius (half diameter). Vendored thumb is 8dp radius → 16dp diameter. */
+    const val ThumbRadiusDp: Float = 8f
+    /** Inline slider collapsed height 40dp, thumb 7dp per vendored Inline. */
+    const val InlineTrackWidthDp: Float = 3f
+    const val InlineThumbRadiusDp: Float = 7f
+    const val InlineContainerHeightDp: Float = 40f
+
+    val ContainerShape: WearShape = WearShape.Large
+    val LabelTypography: WearTypographyRole = WearTypographyRole.LabelMedium
+}
+
+// ---------------------------------------------------------------------------
+// ProgressIndicatorTokens — vendored from CircularProgressIndicatorDefaults
+// ---------------------------------------------------------------------------
+object ProgressIndicatorTokens {
+    /** Large stroke for circular (12dp on large screen, 8dp on small → native 12dp base). */
+    const val CircularLargeStrokeWidthDp: Float = 12f
+    /** Small stroke for circular (8dp large, 5dp small → native 8dp base). */
+    const val CircularSmallStrokeWidthDp: Float = 8f
+    const val CircularIndeterminateStrokeWidthDp: Float = 3f
+    const val CircularGapFactor: Float = 1f / 3f // gap = stroke/3
+    const val StartAngle: Float = 270f
+    const val FullScreenPaddingDp: Float = 12f // PaddingDefaults.edgePadding
+    /** Linear track height 12dp per LinearProgressIndicatorDefaults. */
+    const val LinearTrackHeightDp: Float = 12f
+    /** Level indicator 120° sweep, 4dp stroke, 5 levels (vendored LevelIndicator). */
+    const val LevelSweepDegrees: Float = 120f
+    const val LevelStrokeWidthDp: Float = 4f
+    const val LevelCount: Int = 5
+    /** Arc progress 65° start, 280° sweep, 3dp default stroke. */
+    const val ArcStartAngle: Float = 65f
+    const val ArcSweepDegrees: Float = 280f
+    const val ArcStrokeWidthDp: Float = 3f
+}
+
+// ---------------------------------------------------------------------------
+// PickerTokens — vendored from Picker.kt (3 visible, 0.70/0.50 cubic 0.3,0,0.7,1)
+// ---------------------------------------------------------------------------
+object PickerTokens {
+    const val VisibleItems: Int = 3
+    const val ItemHeightDp: Float = 32f
+    const val ContainerHeightDp: Float = 120f
+    const val SelectionRadiusDp: Float = 8f
+    const val MinScale: Float = 0.70f
+    const val MinAlpha: Float = 0.50f
+}
+
+// ---------------------------------------------------------------------------
+// PageIndicatorTokens — vendored from PageIndicatorSpacing
+// ---------------------------------------------------------------------------
+object PageIndicatorTokens {
+    const val IndicatorSizeDp: Float = 6f
+    const val SpacingDp: Float = 4f
+    const val SelectedAlpha: Float = 1f
+    const val UnselectedAlpha: Float = 0.66f
+    val LabelTypography: WearTypographyRole = WearTypographyRole.LabelSmall
+}
+
+// ---------------------------------------------------------------------------
+// VignetteTokens — vendored from VignettePosition
+// ---------------------------------------------------------------------------
+object VignetteTokens {
+    const val TopAlpha: Float = 0.50f
+    const val BottomAlpha: Float = 0.32f
+    const val BothAlpha: Float = 0.20f
+}
+
+// ---------------------------------------------------------------------------
+// DialogTokens — vendored from Dialog.kt (Alert/Confirmation)
+// ---------------------------------------------------------------------------
+object DialogTokens {
+    const val ContainerMaxWidthDp: Float = 280f
+    const val ButtonHeightDp: Float = 52f
+    val TitleTypographyRole: WearTypographyRole = WearTypographyRole.TitleMedium
+    val ContentTypographyRole: WearTypographyRole = WearTypographyRole.BodyMedium
+}
+
+// ---------------------------------------------------------------------------
+// TimeTextTokens — vendored from TimeText.kt
+// ---------------------------------------------------------------------------
+object TimeTextTokens {
+    const val ContainerHeightDp: Float = 30f
+    const val ClockRadiusInsetDp: Float = 9f
+    const val MaxSweepDegrees: Float = 70f
+    const val EdgePaddingDp: Float = 12f // PaddingDefaults.edgePadding mirrored for TimeText
+}
+
+// ---------------------------------------------------------------------------
+// SwitchTokens — vendored from SwitchButton.kt (52dp row, 32x22 track, 6→9dp thumb)
+// ---------------------------------------------------------------------------
+object SwitchTokens {
+    const val ContainerHeightDp: Float = 52f
+    const val TrackWidthDp: Float = 32f
+    const val TrackOuterHeightDp: Float = 24f
+    const val TrackInnerHeightDp: Float = 22f
+    const val ThumbRadiusUncheckedDp: Float = 6f
+    const val ThumbRadiusCheckedDp: Float = 9f
+    const val BorderWidthDp: Float = 2f
+    const val AnimationDurationMillis: Long = 160L
+}
+

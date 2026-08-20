@@ -18,7 +18,7 @@ class VignetteView : View {
     private var topEnabled = true
     private var bottomEnabled = true
     private var vignetteColor = Color.BLACK
-    private var strength = 0.50f // vendored Vignette image alpha ~0.5 at top, fading to 0
+    private var strength = VignetteTokens.TopAlpha // vendored Vignette image alpha ~0.5 at top, fading to 0
 
     constructor(context: Context) : this(context, null)
     constructor(context: Context, attrs: AttributeSet?) : this(context, attrs, 0)
@@ -71,7 +71,7 @@ class VignetteView : View {
         val alpha = (Color.alpha(vignetteColor) * strength).toInt().coerceIn(0, 255)
         val opaque = Color.argb(alpha, Color.red(vignetteColor), Color.green(vignetteColor), Color.blue(vignetteColor))
         val isRound = abs(width - height) <= max(width, height) * 0.14f
-        val depth = if (isRound) height * 0.32f else height * 0.20f
+        val depth = if (isRound) height * 0.32f else height * 0.20f // 0.32 Top/Bottom vs 0.20 Both per VignetteTokens
         if (topEnabled) {
             paint.shader = LinearGradient(0f, 0f, 0f, depth, opaque, Color.TRANSPARENT, Shader.TileMode.CLAMP)
             canvas.drawRect(0f, 0f, width.toFloat(), depth, paint)

@@ -25,7 +25,7 @@ open class PickerView : ViewGroup {
     private var adapter: WearItemAdapter? = null
     private val itemViews = ArrayList<View>()
     private var selected = 0
-    private var visibleItems = 3 // vendored Picker defaults to 3 visible (center + above/below)
+    private var visibleItems = PickerTokens.VisibleItems // vendored Picker defaults to 3 visible (center + above/below)
     private var wrap = true
     private var selectionListener: WearSelectionListener? = null
     private var dragging = false
@@ -43,7 +43,7 @@ open class PickerView : ViewGroup {
         isFocusable = true
         isClickable = true
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
-        minimumHeight = dp(120)
+        minimumHeight = dp(PickerTokens.ContainerHeightDp.toInt())
     }
 
     fun setAdapter(value: WearItemAdapter?) {
@@ -97,14 +97,14 @@ open class PickerView : ViewGroup {
         }
     }
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + .5f).toInt()
-    private fun itemHeight(): Int = max(dp(32), height / visibleItems)
+    private fun itemHeight(): Int = max(dp(PickerTokens.ItemHeightDp.toInt()), height / visibleItems)
     private fun selectedValueText(): CharSequence {
         val child = itemViews.getOrNull(visibleItems / 2)
         return if (child is TextView) child.text else "Item ${selected + 1}"
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val desiredHeight = dp(40) * visibleItems
+        val desiredHeight = dp(PickerTokens.ItemHeightDp.toInt()) * visibleItems + dp(24)
         val width = resolveSize(suggestedMinimumWidth.coerceAtLeast(dp(96)), widthMeasureSpec)
         val height = resolveSize(desiredHeight, heightMeasureSpec)
         val childHeight = max(1, height / visibleItems)
@@ -134,7 +134,7 @@ open class PickerView : ViewGroup {
     override fun dispatchDraw(canvas: Canvas) {
         val selectionHeight = itemHeight()
         val top = (height - selectionHeight) / 2f
-        canvas.drawRoundRect(RectF(0f, top, width.toFloat(), top + selectionHeight), dp(8).toFloat(), dp(8).toFloat(), selectionPaint)
+        canvas.drawRoundRect(RectF(0f, top, width.toFloat(), top + selectionHeight), dp(PickerTokens.SelectionRadiusDp.toInt()).toFloat(), dp(PickerTokens.SelectionRadiusDp.toInt()).toFloat(), selectionPaint)
         canvas.drawLine(0f, top, width.toFloat(), top, dividerPaint)
         canvas.drawLine(0f, top + selectionHeight, width.toFloat(), top + selectionHeight, dividerPaint)
         super.dispatchDraw(canvas)

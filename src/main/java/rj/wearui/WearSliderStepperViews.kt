@@ -44,9 +44,9 @@ open class SliderView : View {
         set(value) { field = value; invalidate() }
     var thumbColor: Int = Color.rgb(246, 237, 255)
         set(value) { field = value; invalidate() }
-    var trackWidthDp: Int = 4
+    var trackWidthDp: Int = SliderTokens.TrackWidthDp.toInt()
         set(value) { field = value.coerceAtLeast(1); invalidate() }
-    var thumbRadiusDp: Int = 8
+    var thumbRadiusDp: Int = SliderTokens.ThumbRadiusDp.toInt()
         set(value) { field = value.coerceAtLeast(3); invalidate() }
 
     constructor(context: Context) : this(context, null)

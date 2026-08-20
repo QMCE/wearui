@@ -23,7 +23,7 @@ import kotlin.math.min
 class TimeTextView : View {
     private var source: rj.wearui.WearTimeSource? = null
     private var status: CharSequence? = null
-    private var maxSweepDegrees = 70f
+    private var maxSweepDegrees = TimeTextTokens.MaxSweepDegrees
     private var clockBackgroundColor = Color.TRANSPARENT
     private var reducedMotion = false
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -120,7 +120,7 @@ class TimeTextView : View {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val availableWidth = MeasureSpec.getSize(widthMeasureSpec)
         val desiredWidth = if (availableWidth > 0) availableWidth else dp(120f)
-        val desiredHeight = dp(30f)
+        val desiredHeight = dp(TimeTextTokens.ContainerHeightDp)
         setMeasuredDimension(resolveSize(desiredWidth, widthMeasureSpec), resolveSize(desiredHeight, heightMeasureSpec))
     }
 
@@ -146,7 +146,7 @@ class TimeTextView : View {
         }
         val centerX = width / 2f
         val centerY = max(width, height) / 2f
-        val radius = min(width, height) / 2f - dp(9f)
+        val radius = min(width, height) / 2f - dp(TimeTextTokens.ClockRadiusInsetDp)
         val rect = RectF(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
         val sweep = maxSweepDegrees.coerceAtMost(140f)
         // A tiny upward arc keeps the time at the top of a circular display.

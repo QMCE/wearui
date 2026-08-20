@@ -1,0 +1,44 @@
+stages:
+  - verify
+  - build
+
+variables:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  ANDROID_SDK_ROOT: "/opt/android-sdk"
+
+# Import boundary: rj.wearui may only import android.* + java/javax/kotlin
+import-boundary:
+  stage: verify
+  image: alpine:latest
+  script:
+    - apk add --no-cache ripgrep
+    - echo "Checking import boundary..."
+    - '! rg -n "^import (androidx|kotlinx|momoi|com\\.)" src/main/java/rj/wearui'
+    - echo "boundary clean"
+  rules:
+    - if: $CI_PIPELINE_SOURCE
+
+# Compile wearui library (offline cache assumed, fallback online)
+compile-wearui:
+  stage: build
+  image: ghcr.io/android/gradle:8.8-jdk11
+  script:
+    - export ANDROID_HOME=/opt/android-sdk
+    - ./gradlew :wearui:compileReleaseKotlin --stacktrace
+  artifacts:
+    reports:
+      dotenv: build.env
+  rules:
+    - if: $CI_PIPELINE_SOURCE
+
+# Optional: app integration build (requires source.apk stub)
+compile-app-integration:
+  stage: build
+  image: ghcr.io/android/gradle:8.8-jdk11
+  script:
+    - export ANDROID_HOME=/opt/android-sdk
+    - ./gradlew :app:compileReleaseKotlin --offline || ./gradlew :app:compileReleaseKotlin
+  needs: ["compile-wearui"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE
+      when: manual

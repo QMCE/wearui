@@ -134,8 +134,8 @@ open class ToggleMarkView(context: Context, private val kind: WearMarkKind) : Vi
                 // Vendored SwitchButton.kt exact geometry:
                 // SWITCH_WIDTH 32dp, SWITCH_INNER_HEIGHT 22dp, SWITCH_OUTER_HEIGHT 24dp, TRACK 2dp,
                 // THUMB 6dp → 9dp, padding = INNER/2 - thumbRadius.
-                val trackW = dp(32f)
-                val visibleH = dp(22f)
+                val trackW = dp(SwitchTokens.TrackWidthDp)
+                val visibleH = dp(SwitchTokens.TrackInnerHeightDp)
                 val trackTop = centerY - visibleH / 2f
                 val trackLeft = (width - trackW) / 2f
                 val trackColor = blend(uncheckedTrack, checkedTrack, colorVisual)
@@ -153,16 +153,16 @@ open class ToggleMarkView(context: Context, private val kind: WearMarkKind) : Vi
                     )
                 }
                 // Thumb: radius lerp 6→9, position lerp(radius+paddingUnchecked → trackW-radius-paddingChecked)
-                val rUnchecked = dp(6f)
-                val rChecked = dp(9f)
+                val rUnchecked = dp(SwitchTokens.ThumbRadiusUncheckedDp)
+                val rChecked = dp(SwitchTokens.ThumbRadiusCheckedDp)
                 var r = rUnchecked + (rChecked - rUnchecked) * visual
                 // Press shrink: when pressed the thumb contracts slightly (≈15%), matching the
                 // expected “only on press it shrinks” behavior while keeping checked/unchecked
                 // radii distinct per vendored 6→9 spec. Without this the two states appear to have
                 // inconsistent ball sizes with no press feedback.
                 if (isPressed) r *= 0.85f
-                val paddingUnchecked = dp(11f) - rUnchecked // INNER/2 - 6 = 5dp
-                val paddingChecked = dp(11f) - rChecked // INNER/2 - 9 = 2dp
+                val paddingUnchecked = dp(SwitchTokens.TrackInnerHeightDp/2f) - rUnchecked // INNER/2 - 6 = 5dp
+                val paddingChecked = dp(SwitchTokens.TrackInnerHeightDp/2f) - rChecked // INNER/2 - 9 = 2dp
                 val xOff = trackLeft + rUnchecked + paddingUnchecked // 11dp from trackLeft
                 val xOn = trackLeft + trackW - rChecked - paddingChecked // 21dp from trackLeft (trackW -11)
                 val x = xOff + (xOn - xOff) * visual
