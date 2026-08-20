@@ -59,31 +59,55 @@ open class WearDialogView : FrameLayout {
 
     fun setOnDismissListener(listener: (() -> Unit)?) { dismissListener = listener; scrimView.setOnClickListener { listener?.invoke() } }
 
+    // Optional background view that scales to BackgroundMinScale (0.92) when dialog shows — mirrors vendored Dialog's SwipeToDismissBoxState background scaling
+    var backgroundContent: View? = null
+    private var backgroundAnimator: ValueAnimator? = null
+    companion object {
+        const val BackgroundMinScale: Float = 0.92f
+    }
+
     open fun show(animated: Boolean = true) {
         visibility = VISIBLE
         fadeAnimator?.cancel()
-        if (!animated || isReducedMotionRequested(context)) {
+        backgroundAnimator?.cancel()
+        val shouldSnap = !animated || isReducedMotionRequested(context) || !isAttachedToWindow
+        if (shouldSnap) {
             alpha = 1f
+            backgroundContent?.let { it.scaleX = BackgroundMinScale; it.scaleY = BackgroundMinScale }
             return
         }
-        val spec = WearMotionSpec(WearMotionDurations.Long450, WearMotionEasings.EmphasizedStandard).withReducedMotion(false)
+        val spec = WearMotionSpec(WearMotionDurations.Medium350, WearMotionEasings.EmphasizedStandard).withReducedMotion(false)
         fadeAnimator = ValueAnimator.ofFloat(alpha, 1f).apply {
             duration = spec.durationMillis
             interpolator = spec.interpolator
             addUpdateListener { alpha = it.animatedValue as Float }
             start()
         }
+        backgroundContent?.let { bg ->
+            bg.pivotX = bg.width / 2f
+            bg.pivotY = bg.height / 2f
+            val bgSpec = WearMotionSpec(WearMotionDurations.Medium350, WearMotionEasings.EmphasizedDecelerate).withReducedMotion(false)
+            backgroundAnimator = ValueAnimator.ofFloat(bg.scaleX, BackgroundMinScale).apply {
+                duration = bgSpec.durationMillis
+                interpolator = bgSpec.interpolator
+                addUpdateListener { v -> bg.scaleX = v.animatedValue as Float; bg.scaleY = v.animatedValue as Float }
+                start()
+            }
+        }
     }
 
     open fun dismiss(animated: Boolean = true, onEnd: (() -> Unit)? = null) {
         fadeAnimator?.cancel()
-        if (!animated || isReducedMotionRequested(context)) {
+        backgroundAnimator?.cancel()
+        val shouldSnap = !animated || isReducedMotionRequested(context) || !isAttachedToWindow
+        if (shouldSnap) {
             alpha = 0f
             visibility = GONE
+            backgroundContent?.let { it.scaleX = 1f; it.scaleY = 1f }
             onEnd?.invoke()
             return
         }
-        val spec = WearMotionSpec(WearMotionDurations.Medium250, WearMotionEasings.EmphasizedAccelerate).withReducedMotion(false)
+        val spec = WearMotionSpec(WearMotionDurations.Short200, WearMotionEasings.EmphasizedAccelerate).withReducedMotion(false)
         fadeAnimator = ValueAnimator.ofFloat(alpha, 0f).apply {
             duration = spec.durationMillis
             interpolator = spec.interpolator
@@ -95,6 +119,15 @@ open class WearDialogView : FrameLayout {
                 }
             })
             start()
+        }
+        backgroundContent?.let { bg ->
+            val bgSpec = WearMotionSpec(WearMotionDurations.Short200, WearMotionEasings.EmphasizedAccelerate).withReducedMotion(false)
+            backgroundAnimator = ValueAnimator.ofFloat(bg.scaleX, 1f).apply {
+                duration = bgSpec.durationMillis
+                interpolator = bgSpec.interpolator
+                addUpdateListener { v -> bg.scaleX = v.animatedValue as Float; bg.scaleY = v.animatedValue as Float }
+                start()
+            }
         }
     }
 
