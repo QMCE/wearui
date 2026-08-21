@@ -42,10 +42,12 @@ class ButtonContent(context: Context) : LinearLayout(context) {
         textColumn.orientation = VERTICAL
         textColumn.isBaselineAligned = false
         textColumn.gravity = Gravity.CENTER
-        // Ensure column content is centered vertically inside the pill
+        // Ensure column content is centered vertically inside the pill — use WRAP_CONTENT height so group is centered via parent gravity, not internal distribution
         text.setTypographyRole(ButtonTokens.LabelTypography)
         text.gravity = Gravity.CENTER_VERTICAL or Gravity.START
         text.includeFontPadding = false
+        // Explicitly center lineHeight block: fallbackLineSpacing false already in WearTextView, ensure vertical gravity and no extra top bias
+        text.setPadding(0, 0, 0, dp(1)) // 1px nudge down to counter font ascent bias (visual centering)
         text.maxLines = 3
         text.ellipsize = android.text.TextUtils.TruncateAt.END
         text.setTextColor(WearColorScheme.Dark.onPrimary) // WearButtonColors.contentColor -> onPrimary (TokenBridge supplies M3.onPrimary)
@@ -64,7 +66,8 @@ class ButtonContent(context: Context) : LinearLayout(context) {
             gravity = Gravity.CENTER_VERTICAL
         }
         textColumn.addView(secondary)
-        textColumn.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { topMargin = 0; gravity = Gravity.CENTER }
+        // WRAP_CONTENT height lets FrameLayout center the column as a whole (2.5dp slack distributed outside, not inside)
+        textColumn.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
         addView(textColumn)
     }
 
@@ -183,7 +186,9 @@ open class ButtonView : WearControlFrame {
             ButtonTokens.ContentPaddingEndDp.toInt(),
             ButtonTokens.ContentPaddingBottomDp.toInt()
         )
-        addView(buttonContent, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // Center buttonContent as WRAP_CONTENT block inside the 52dp FrameLayout (padding 6 vertical) — avoids MATCH_PARENT stretch that can bias vertical distribution
+        val glp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER)
+        addView(buttonContent, glp)
         minimumHeight = dp(ButtonTokens.ContainerHeightDp)
         buttonContent.setIconSize(dp(ButtonTokens.IconSizeDp))
         buttonContent.setGap(dp(ButtonTokens.IconSpacingDp))

@@ -181,8 +181,8 @@ class LevelIndicatorView : WearProgressBase {
     // Vendored LevelIndicator: curved arc via IndicatorImpl, sweep 120deg, stroke 4dp, edgePadding 4dp, FractionPositionStateAdapter
     init { colors = WearProgressColors(indicatorColor = Color.rgb(186, 195, 255), trackColor = Color.argb(77, 51, 46, 60)) } // track 0.3 alpha per LevelIndicatorTokens
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    var sweepAngle: Float = 120f // vendored LevelIndicatorDefaults.SweepAngle 120
-    var levelStrokeWidthDp: Float = 4f // LevelIndicatorDefaults.StrokeWidth 4dp
+    var sweepAngle: Float = ProgressIndicatorTokens.LevelSweepDegrees // vendored LevelIndicatorDefaults.SweepAngle 120
+    var levelStrokeWidthDp: Float = ProgressIndicatorTokens.LevelStrokeWidthDp // LevelIndicatorDefaults.StrokeWidth 4dp
     var levelCount: Int = 5
         set(value) { field = value.coerceAtLeast(1); invalidate() }
     var vertical: Boolean = true
@@ -216,9 +216,9 @@ class LevelIndicatorView : WearProgressBase {
 /** Arc progress indicator - vendored from ArcProgressIndicator.kt, gap = stroke/3, indeterminate head/tail 360 sweep */
 class ArcProgressIndicatorView : View {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
-    var startAngle: Float = 65f
-    var endAngle: Float = 65f + 280f // fullSweep 280 default (65 to 345)
-    var strokeWidthDp: Float = 3f
+    var startAngle: Float = ProgressIndicatorTokens.ArcStartAngle
+    var endAngle: Float = ProgressIndicatorTokens.ArcStartAngle + ProgressIndicatorTokens.ArcSweepDegrees // fullSweep 280 default (65 to 345)
+    var strokeWidthDp: Float = ProgressIndicatorTokens.ArcStrokeWidthDp
         set(v) { field = v; invalidate() }
     var gapSizeDp: Float = 0f // 0 uses stroke/3
     var colors = WearProgressColors()

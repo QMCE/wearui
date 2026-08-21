@@ -40,12 +40,12 @@ class VignetteView : View {
         invalidate()
     }
 
-    /** Vendored VignettePosition mapping: 0 Top, 1 Bottom, 2 TopAndBottom */
+    /** Vendored VignettePosition mapping: 0 Top, 1 Bottom, 2 TopAndBottom — strength 0.50/0.32/0.20 per VignetteTokens */
     fun setPosition(position: Int) {
         when (position) {
-            0 -> { topEnabled = true; bottomEnabled = false }
-            1 -> { topEnabled = false; bottomEnabled = true }
-            else -> { topEnabled = true; bottomEnabled = true }
+            0 -> { topEnabled = true; bottomEnabled = false; strength = VignetteTokens.TopAlpha }
+            1 -> { topEnabled = false; bottomEnabled = true; strength = VignetteTokens.BottomAlpha }
+            else -> { topEnabled = true; bottomEnabled = true; strength = VignetteTokens.BothAlpha }
         }
         invalidate()
     }

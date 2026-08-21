@@ -121,8 +121,8 @@ open class PickerView : ViewGroup {
             // Vendored ScalingLazyColumn spec: scale 0.70 / alpha 0.50 / cubic 0.3,0,0.7,1
             val raw = abs(index - visibleItems / 2).toFloat() / (visibleItems / 2f).coerceAtLeast(1f)
             val eased = pickerEasing.getInterpolation(raw.coerceIn(0f,1f))
-            val scale = 1f - (1f - 0.70f) * eased
-            val alpha = 1f - (1f - 0.50f) * eased
+            val scale = 1f - (1f - PickerTokens.MinScale) * eased
+            val alpha = 1f - (1f - PickerTokens.MinAlpha) * eased
             child.pivotX = child.measuredWidth / 2f
             child.pivotY = child.measuredHeight / 2f
             child.scaleX = scale

@@ -38,9 +38,12 @@ abstract class AdapterColumnView(
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var velocityTracker: VelocityTracker? = null
-    private val scroller = OverScroller(context).apply { setFriction(0.09f) }
+    private val scroller = OverScroller(context).apply { setFriction(0.038f) }
     private var lastScroll = 0
     private var oldItemCount = 0
+    private var pendingScrollY = 0
+    private var fractionalTouchDy = 0f
+    private var pendingScrollScheduled = false
     private var metricsProvider: ScrollMetricsProvider? = null
     private var metricsListener: WearScrollMetricsListener? = null
 
@@ -233,6 +236,28 @@ abstract class AdapterColumnView(
     fun getScrollRangePx(): Int = max(0, totalContentHeight() - viewportHeight)
     fun canScrollForward(): Boolean = scrollY < getScrollRangePx()
     fun canScrollBackward(): Boolean = scrollY > 0
+
+    private fun consumePendingScrollOnAnimation() {
+        if (pendingScrollScheduled) return
+        pendingScrollScheduled = true
+        postOnAnimation {
+            pendingScrollScheduled = false
+            val requested = pendingScrollY
+            if (requested == 0) return@postOnAnimation
+            val target = (scrollY + requested).coerceIn(0, getScrollRangePx())
+            val applied = target - scrollY
+            pendingScrollY -= applied
+            if (applied != 0) scrollTo(0, target)
+        }
+    }
+
+    override fun scrollBy(x: Int, y: Int) {
+        if (y != 0) {
+            pendingScrollY += y
+            consumePendingScrollOnAnimation()
+        }
+    }
+
     fun getScrollMetricsProvider(): ScrollMetricsProvider {
         val existing = metricsProvider
         if (existing != null) return existing
@@ -477,6 +502,32 @@ abstract class AdapterColumnView(
         }
     }
 
+    private fun findClickableChildUnder(x: Float, y: Float): View? {
+        for (i in childCount - 1 downTo 0) {
+            val child = getChildAt(i)
+            if (child.visibility != VISIBLE) continue
+            // Consider any view that has OnClickListener (via isClickable or has listener) as clickable
+            // Use layout bounds without scale for more permissive hit (visual is smaller but we want to catch taps)
+            val rect = android.graphics.Rect()
+            child.getHitRect(rect)
+            // Expand by 8dp to catch near misses (like RecyclerView's touch slop)
+            val expand = (8 * resources.displayMetrics.density).toInt()
+            rect.inset(-expand, -expand)
+            if (rect.contains(x.toInt(), y.toInt())) {
+                // Check if child or any descendant is clickable
+                if (child.isClickable || child.hasOnClickListeners()) return child
+                // Also check descendants
+                if (child is ViewGroup) {
+                    for (j in 0 until child.childCount) {
+                        val grand = child.getChildAt(j)
+                        if (grand.isClickable || grand.hasOnClickListeners()) return child
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -494,7 +545,10 @@ abstract class AdapterColumnView(
             MotionEvent.ACTION_MOVE -> {
                 val dy = event.y - initialTouchY
                 val dx = event.x - initialTouchX
-                if (!dragging && abs(dy) > touchSlop * 1.8f && abs(dy) > abs(dx) * 1.5f) dragging = true
+                val isClickableChild = findClickableChildUnder(initialTouchX, initialTouchY) != null
+                val slop = if (isClickableChild) touchSlop * 1.0f else touchSlop * 1.0f
+                val ratio = if (isClickableChild) 1.2f else 1.2f
+                if (!dragging && abs(dy) > slop && abs(dy) > abs(dx) * ratio) dragging = true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 dragging = false
@@ -514,6 +568,8 @@ abstract class AdapterColumnView(
                 initialTouchX = event.x
                 initialTouchY = event.y
                 scroller.abortAnimation()
+                pendingScrollY = 0
+                fractionalTouchDy = 0f
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -522,8 +578,18 @@ abstract class AdapterColumnView(
                     // Only start dragging after passing slop and predominantly vertical
                     val totalDy = event.y - initialTouchY
                     val totalDx = event.x - initialTouchX
-                    if (!dragging && abs(totalDy) > touchSlop * 1.8f && abs(totalDy) > abs(totalDx) * 1.5f) dragging = true
-                    if (dragging) scrollBy(0, dy.toInt())
+                    val isClickableChild = findClickableChildUnder(initialTouchX, initialTouchY) != null
+                    val slop = if (isClickableChild) touchSlop * 1.2f else touchSlop * 1.2f
+                    val ratio = if (isClickableChild) 1.5f else 1.5f
+                    if (!dragging && abs(totalDy) > slop && abs(totalDy) > abs(totalDx) * ratio) dragging = true
+                    if (dragging) {
+                        fractionalTouchDy += dy
+                        val wholePixels = fractionalTouchDy.toInt()
+                        if (wholePixels != 0) {
+                            fractionalTouchDy -= wholePixels
+                            scrollBy(0, wholePixels)
+                        }
+                    }
                 }
                 lastTouchY = event.y
                 lastTouchX = event.x
@@ -532,10 +598,8 @@ abstract class AdapterColumnView(
                 if (event.actionMasked == MotionEvent.ACTION_UP && dragging) {
                     velocityTracker?.computeCurrentVelocity(1000, 8000f)
                     var vy = velocityTracker?.yVelocity ?: 0f
-                    // Watch-tuned: 0.08x and 700 cap + high friction (0.09) for 1:1 drag feel, mimics RecyclerView snap decay
-                    vy *= 0.08f
-                    vy = vy.coerceIn(-700f, 700f)
-                    if (abs(vy) > 60f) scroller.fling(0, scrollY, 0, -vy.toInt(), 0, 0, 0, getScrollRangePx())
+                    vy = (vy * 0.32f).coerceIn(-3600f, 3600f)
+                    if (abs(vy) > 50f) scroller.fling(0, scrollY, 0, -vy.toInt(), 0, 0, 0, getScrollRangePx())
                 }
                 dragging = false
                 velocityTracker?.recycle(); velocityTracker = null
