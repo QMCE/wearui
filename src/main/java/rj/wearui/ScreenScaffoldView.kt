@@ -130,8 +130,8 @@ class ScreenScaffoldView : ViewGroup, ScreenStageProvider {
             MeasureSpec.makeMeasureSpec(dp(30f), MeasureSpec.EXACTLY)
         )
         scrollIndicator?.measure(
-            MeasureSpec.makeMeasureSpec(dp(26f), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(dp(50f), MeasureSpec.EXACTLY)
+            MeasureSpec.makeMeasureSpec(measuredWidth, MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.AT_MOST)
         )
     }
 
@@ -216,13 +216,17 @@ class ScreenScaffoldView : ViewGroup, ScreenStageProvider {
                 indicator?.alpha = 0f
             }
             ScreenStage.Scrolling -> {
-                time?.pivotX = time.width / 2f
-                time?.pivotY = 0f
-                time?.translationY = -dp(24f).toFloat()
-                // Vendored minMotionOut 1f -> maxMotionOut 0.5f
-                time?.scaleX = .5f
-                time?.scaleY = .5f
-                time?.alpha = .5f
+                val active = provider
+                val valid = active?.isScrollAwayValid == true && active.anchorOffsetPx.isFinite()
+                val offset = if (valid) active!!.anchorOffsetPx else Float.NaN
+                val maxScrollOut = dp(36f).toFloat()
+                val progress = if (!valid || offset > maxScrollOut) {
+                    1f
+                } else {
+                    (offset / maxScrollOut).coerceIn(0f, 1f)
+                }
+                val alphaTarget = if (!valid || offset > maxScrollOut) 0f else 1f
+                applyScrollAway(progress, alphaTarget)
                 indicator?.alpha = 1f
             }
             ScreenStage.Idle -> {
@@ -260,6 +264,19 @@ class ScreenScaffoldView : ViewGroup, ScreenStageProvider {
                 }
             }
         }
+    }
+
+    /** Direct sync during scrolling mirrors ScrollAway's `scrollingAtTheTop` snap path. */
+    private fun applyScrollAway(progress: Float, alphaTarget: Float) {
+        val time = timeText ?: return
+        time.pivotX = time.width / 2f
+        time.pivotY = 0f
+        time.translationY = -dp(24f) * progress
+        // Vendored motion fraction is lerp(minMotionOut = 1f, maxMotionOut = .5f, progress).
+        val motionFraction = 1f - .5f * progress
+        time.scaleX = motionFraction
+        time.scaleY = motionFraction
+        time.alpha = motionFraction * alphaTarget
     }
 
     override fun onAttachedToWindow() {

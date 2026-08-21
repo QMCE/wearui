@@ -107,7 +107,10 @@ data class IndicatorState(
     val scrollOffsetPx: Int = 0,
     val viewportExtentPx: Int = 0,
     val contentExtentPx: Int = 0,
-    val overscrollFraction: Float = 0f
+    val overscrollFraction: Float = 0f,
+    /** Optional list-layout position used by TransformingLazyColumn's native indicator adapter. */
+    val positionFractionOverride: Float = Float.NaN,
+    val sizeFractionOverride: Float = Float.NaN
 ) {
     val isValid: Boolean
         get() = totalItemCount > 0 && viewportExtentPx > 0 && contentExtentPx >= viewportExtentPx

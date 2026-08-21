@@ -180,6 +180,15 @@ abstract class AdapterColumnView(
         // ActiveViews keys are adapter positions (already windowed)
         return activeViews.keys.minOrNull() ?: -1
     }
+
+    /** Exposes the windowed first child without widening internal collection access. */
+    protected fun firstVisibleChild(): Pair<Int, View>? {
+        val position = getFirstVisiblePosition()
+        if (position < 0) return null
+        return activeViews[position]?.let { position to it }
+    }
+
+    protected fun contentTopInsetPx(): Int = topInset
     fun getLastVisiblePosition(): Int {
         if (activeViews.isEmpty()) return -1
         return activeViews.keys.maxOrNull() ?: -1
@@ -232,7 +241,8 @@ abstract class AdapterColumnView(
         var first = true
         for (i in 0 until count) {
             val measured = getEstimatedHeight(i)
-            val slot = activeViews[i]?.let { transformedSlotHeight(it, y) } ?: measured
+            val viewportTop = y - scrollY
+            val slot = transformedSlotHeight(measured, viewportTop)
             sum += slot
             if (!first) {
                 sum += spacingPx
@@ -276,11 +286,72 @@ abstract class AdapterColumnView(
     fun getScrollMetricsProvider(): ScrollMetricsProvider {
         val existing = metricsProvider
         if (existing != null) return existing
-        return ScrollMetricsProvider.fromView(this).also { provider ->
+        return adapterMetricsProvider(ScrollMetricsProvider.fromView(this)).also { provider ->
             metricsProvider = provider
             metricsListener?.let { provider.addListener(it) }
         }
     }
+
+    protected open fun metricsAnchorOffsetPx(): Float = scrollY.toFloat()
+
+    protected open fun isMetricsScrollAwayValid(): Boolean = getItemCount() > 0
+
+    private fun adapterMetricsProvider(delegate: ScrollMetricsProvider): ScrollMetricsProvider {
+        return object : ScrollMetricsProvider {
+            override val view: View? get() = delegate.view
+            override val scrollOffsetPx: Int get() = delegate.scrollOffsetPx
+            override val viewportExtentPx: Int get() = delegate.viewportExtentPx
+            override val contentExtentPx: Int get() = delegate.contentExtentPx
+            override val canScrollBackward: Boolean get() = delegate.canScrollBackward
+            override val canScrollForward: Boolean get() = delegate.canScrollForward
+            override val isScrollable: Boolean get() = delegate.isScrollable
+            override val anchorOffsetPx: Float get() = metricsAnchorOffsetPx()
+            override val isScrollAwayValid: Boolean get() = isMetricsScrollAwayValid()
+            override fun toIndicatorState(): IndicatorState = adapterIndicatorState()
+            override fun refresh() = delegate.refresh()
+            override fun addListener(listener: WearScrollMetricsListener) = delegate.addListener(listener)
+            override fun removeListener(listener: WearScrollMetricsListener) = delegate.removeListener(listener)
+            override fun dispose() = delegate.dispose()
+        }
+    }
+
+    private fun adapterIndicatorState(): IndicatorState {
+        val count = getItemCount()
+        val default = ScrollMetricsProvider.fromView(this).toIndicatorState()
+        if (count == 0 || height <= 0) return default
+
+        data class VisibleChild(val position: Int, val child: View)
+        val visible = activeViews.entries.mapNotNull { (position, child) ->
+            if (child.bottom > 0 && child.top < height) VisibleChild(position, child) else null
+        }.sortedBy { it.position }
+        val first = visible.firstOrNull() ?: return default
+        val last = visible.lastOrNull() ?: return default
+
+        val firstBeforePadding = if (first.position == 0) topInset else 0
+        // child.top is already the on-screen placement; subtract only the list's before-padding.
+        val firstOffset = first.child.top - firstBeforePadding
+        val decimalFirst = first.position -
+            firstOffset.coerceAtMost(0).toFloat() /
+            (first.child.measuredHeight + firstBeforePadding).coerceAtLeast(1)
+
+        val lastExtra = if (last.position == count - 1) bottomInset else 0
+        val lastSlotHeight = transformedSlotHeight(last.child.measuredHeight, last.child.top) + lastExtra
+        val lastVisibleSize = (height - last.child.top).coerceIn(0, lastSlotHeight)
+        val decimalLast = last.position + lastVisibleSize.toFloat() / lastSlotHeight.coerceAtLeast(1)
+
+        val denominator = decimalFirst + (count - decimalLast)
+        val position = if (denominator == 0f) 0f else (decimalFirst / denominator).coerceIn(0f, 1f)
+        val size = ((decimalLast - decimalFirst) / count).coerceIn(0.30f, 0.70f)
+
+        return default.copy(
+            firstVisibleItem = first.position,
+            visibleItemCount = visible.size,
+            totalItemCount = count,
+            positionFractionOverride = position,
+            sizeFractionOverride = size
+        )
+    }
+
     fun setOnScrollMetricsListener(listener: WearScrollMetricsListener?) {
         val provider = metricsProvider
         metricsListener?.let { provider?.removeListener(it) }
@@ -295,7 +366,10 @@ abstract class AdapterColumnView(
         val first = getFirstVisiblePosition()
         if (first <= 0) return topInset
         var y = topInset
-        for (i in 0 until first) y += getEstimatedHeight(i) + spacingPx
+        for (i in 0 until first) {
+            val slotHeight = transformedSlotHeight(getEstimatedHeight(i), y - scrollY)
+            y += slotHeight + spacingPx
+        }
         return y
     }
 
@@ -303,7 +377,7 @@ abstract class AdapterColumnView(
      * Height reserved by the list for a child. Visual-only subclasses keep the full measured height;
      * transforming lists override this to mirror Wear Compose's `transformedHeight`.
      */
-    protected open fun transformedSlotHeight(child: View, top: Int): Int = child.measuredHeight
+    protected open fun transformedSlotHeight(measuredHeight: Int, top: Int): Int = measuredHeight
 
     private fun contentHeight(): Int = totalContentHeight()
 
@@ -372,7 +446,8 @@ abstract class AdapterColumnView(
             // layout from bottom. Instead, we keep forward layout but scroll range inverted? For now keep forward semantics;
             // reverse flag mainly affects scroll direction and position mapping, not visual stacking here.
             child.layout(leftInset, y, leftInset + w, y + child.measuredHeight)
-            y += transformedSlotHeight(child, y) + spacingPx
+            val slotHeight = transformedSlotHeight(child.measuredHeight, y)
+            y += slotHeight + spacingPx
         }
         clampScroll()
         applyTransforms()
@@ -492,7 +567,8 @@ abstract class AdapterColumnView(
                     val child = activeViews[pos] ?: continue
                     val w = max(0, width - leftInset - rightInset)
                     child.layout(leftInset, curY, leftInset + w, curY + child.measuredHeight)
-                    curY += transformedSlotHeight(child, curY) + spacingPx
+                    val slotHeight = transformedSlotHeight(child.measuredHeight, curY)
+                    curY += slotHeight + spacingPx
                 }
             }
             applyTransforms()
@@ -738,10 +814,19 @@ class TransformingLazyColumnView : AdapterColumnView {
 
     private val transformEasing = PathInterpolator(0.3f, 0f, 0.7f, 1f)
 
-    private fun transformationScale(child: View, top: Int): Float {
+    override fun metricsAnchorOffsetPx(): Float {
+        if (!isMetricsScrollAwayValid()) return Float.NaN
+        val (firstPosition, firstChild) = firstVisibleChild() ?: return Float.NaN
+        if (firstPosition != 0) return Float.NaN
+        // The first item's layout top starts at the list's before-content padding. As it moves up,
+        // this is exactly TransformingLazyColumnStateScrollInfoProvider.anchorItemOffset.
+        return (contentTopInsetPx() - firstChild.top).coerceAtLeast(0).toFloat()
+    }
+
+    private fun transformationScale(measuredHeight: Int, top: Int): Float {
         val viewportHeight = max(1f, height.toFloat())
         val topFraction = top / viewportHeight
-        val bottomFraction = (top + child.measuredHeight) / viewportHeight
+        val bottomFraction = (top + measuredHeight) / viewportHeight
         val itemHeightFraction = bottomFraction - topFraction
         val spec = responsiveTransformationParams()
         val sizeRatio = ((itemHeightFraction - spec.minElementHeightFraction) /
@@ -760,9 +845,9 @@ class TransformingLazyColumnView : AdapterColumnView {
         return lerp(spec.edgeScale, 1f, transformEasing.getInterpolation(transitionProgress))
     }
 
-    override fun transformedSlotHeight(child: View, top: Int): Int {
-        if (!scalingEnabled()) return child.measuredHeight
-        return ceil(child.measuredHeight * transformationScale(child, top)).toInt()
+    override fun transformedSlotHeight(measuredHeight: Int, top: Int): Int {
+        if (!scalingEnabled()) return measuredHeight
+        return ceil(measuredHeight * transformationScale(measuredHeight, top)).toInt()
     }
 
     override fun transformChild(child: View, distanceFromCenter: Float, viewportCenter: Float) {
@@ -782,7 +867,7 @@ class TransformingLazyColumnView : AdapterColumnView {
         // progress is based on item edges relative to the full list viewport, not merely on the
         // distance from the viewport center.
         val spec = responsiveTransformationParams()
-        val scale = transformationScale(child, child.top)
+        val scale = transformationScale(child.measuredHeight, child.top)
         val eased = ((scale - spec.edgeScale) / (1f - spec.edgeScale)).coerceIn(0f, 1f)
         // Vendored transformOrigin is center; native pivot centered matches
         // GraphicsLayerScope default so scale shrinks symmetrically.

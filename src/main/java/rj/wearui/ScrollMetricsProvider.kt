@@ -15,6 +15,9 @@ interface ScrollMetricsProvider {
     val scrollOffsetPx: Int
     val viewportExtentPx: Int
     val contentExtentPx: Int
+    /** Offset used by ScreenScaffold's TimeText scroll-away; NaN means the anchor is gone. */
+    val anchorOffsetPx: Float get() = scrollOffsetPx.toFloat()
+    val isScrollAwayValid: Boolean get() = true
     val canScrollBackward: Boolean
     val canScrollForward: Boolean
     val isScrollable: Boolean
@@ -90,6 +93,8 @@ private abstract class BaseScrollMetricsProvider(final override val view: View?)
     override val scrollOffsetPx: Int get() = snapshot.offset
     override val viewportExtentPx: Int get() = snapshot.extent
     override val contentExtentPx: Int get() = snapshot.range
+    override val anchorOffsetPx: Float get() = snapshot.offset.toFloat()
+    override val isScrollAwayValid: Boolean get() = true
     override val canScrollBackward: Boolean get() = snapshot.backward
     override val canScrollForward: Boolean get() = snapshot.forward
     override val isScrollable: Boolean get() = snapshot.scrollable

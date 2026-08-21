@@ -6,35 +6,39 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.os.Parcelable
 import android.os.Bundle
+import android.os.Parcelable
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Visible and disabled colors for [ScrollIndicatorView]. */
 data class WearScrollIndicatorColors(
     val indicatorColor: Int = Color.WHITE,
-    val disabledIndicatorColor: Int = Color.argb(97, 255, 255, 255)
+    val disabledIndicatorColor: Int = Color.argb(97, 255, 255, 255),
+    val trackColor: Int = 0xFF333333.toInt()
 )
 
-/** Curved three-part scroll position indicator for a round screen edge. */
+/**
+ * Android port of Wear Compose Material3's curved three-segment scroll indicator. The top and
+ * bottom arcs are track; the middle arc is the visible viewport. Segment boundaries move with
+ * scroll position, so this is not a thumb centered on a progress value.
+ */
 class ScrollIndicatorView : View {
     private var state: IndicatorState? = null
     private var reverseDirection = false
     private var colors: WearScrollIndicatorColors? = null
-    private var positionSpec: rj.wearui.WearMotionSpec? = null
+    private var positionSpec: WearMotionSpec = WearMotionSpec.StandardDecelerate
     private var snapToPosition = false
     private var reducedMotion = false
-    private var position = 0.5f
-    private var targetPosition = 0.5f
-    private var thumbLength = 0.40f
-    private var overscroll = 0f
+    private var position = 0f
+    private var sizeFraction = 0f
     private var receivedRealState = false
-    private var lastRoundedPosition = Int.MIN_VALUE
-    private var positionAnimator: ValueAnimator? = null
+    private var animator: ValueAnimator? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -51,21 +55,27 @@ class ScrollIndicatorView : View {
 
     fun setState(state: IndicatorState) {
         this.state = state
-        val parsed = parseState(state)
-        val real = parsed.first
-        val next = parsed.second
-        thumbLength = parsed.third
-        overscroll = parsed.fourth
-        val shouldSnap = snapToPosition || !receivedRealState || !real
-            || reducedMotion || !isAttachedToWindow || isReducedMotionRequested(context)
+        val maxScroll = (state.contentExtentPx - state.viewportExtentPx).coerceAtLeast(0)
+        val real = maxScroll > 0 || state.scrollOffsetPx != 0
+        val nextPosition = if (state.positionFractionOverride.isFinite()) {
+            state.positionFractionOverride
+        } else if (maxScroll == 0) 0f else state.scrollOffsetPx.toFloat() / maxScroll
+        val nextSize = when {
+            state.sizeFractionOverride.isFinite() -> state.sizeFractionOverride
+            state.contentExtentPx <= 0 -> MIN_SIZE_FRACTION
+            else -> (state.viewportExtentPx.toFloat() / state.contentExtentPx)
+                .coerceIn(MIN_SIZE_FRACTION, MAX_SIZE_FRACTION)
+        }
+        val shouldSnap = snapToPosition || !receivedRealState || !real ||
+            reducedMotion || !isAttachedToWindow || isReducedMotionRequested(context)
         receivedRealState = receivedRealState || real
-        targetPosition = next
         if (shouldSnap) {
-            positionAnimator?.cancel()
-            position = next
-            updatePositionIfPixelChanged()
+            cancelAnimation()
+            position = nextPosition.coerceIn(0f, 1f)
+            sizeFraction = nextSize
+            invalidate()
         } else {
-            animatePosition(next)
+            animateTo(nextPosition.coerceIn(0f, 1f), nextSize)
         }
         alpha = if (real) 1f else 0f
     }
@@ -82,169 +92,191 @@ class ScrollIndicatorView : View {
         invalidate()
     }
 
-    fun setPositionAnimationSpec(spec: rj.wearui.WearMotionSpec) {
+    fun setPositionAnimationSpec(spec: WearMotionSpec) {
         positionSpec = spec
     }
 
     fun setSnapToPosition(snap: Boolean) {
         snapToPosition = snap
         if (snap) {
-            positionAnimator?.cancel()
-            position = targetPosition
+            cancelAnimation()
             invalidate()
         }
     }
 
     fun setReducedMotionEnabled(enabled: Boolean) {
         reducedMotion = enabled
-        if (enabled) {
-            positionAnimator?.cancel()
-            position = targetPosition
-        }
+        if (enabled) cancelAnimation()
         invalidate()
     }
 
-    private fun parseState(value: IndicatorState): Quad {
-        val max = number(value, "maxValue", "max", "range", "scrollRange", "contentSize", "contentExtentPx")
-        val viewport = number(value, "viewportSize", "viewport", "extent", "viewPort", "viewportExtentPx")
-        val offset = number(value, "offset", "position", "scrollOffset", "scrollOffsetPx", "value")
-        val direct = number(value, "fraction", "positionFraction", "scrollFraction", "progress")
-        val over = number(value, "overscroll", "overScroll", "overscrollFraction")
-        val real = (max > 0f && (max > viewport || offset != 0f)) || direct in 0f..1f && hasMember(value, "fraction", "positionFraction", "scrollFraction", "progress")
-        val raw = if (hasMember(value, "fraction", "positionFraction", "scrollFraction", "progress")) direct else if (max > viewport) offset / (max - viewport) else 0f
-        val length = if (max > 0f && viewport > 0f) (viewport / max).coerceIn(0.30f, 0.70f) else 0.40f
-        return Quad(real, raw.coerceIn(0f, 1f), length, over.coerceIn(-1f, 1f))
-    }
-
-    private class Quad(val first: Boolean, val second: Float, val third: Float, val fourth: Float)
-
-    private fun number(instance: Any, vararg names: String): Float {
-        for (name in names) {
-            try {
-                val field = instance.javaClass.getDeclaredField(name)
-                field.isAccessible = true
-                val result = field.get(instance)
-                if (result is Number) return result.toFloat()
-            } catch (_: Throwable) { }
-            try {
-                val method = instance.javaClass.methods.firstOrNull {
-                    it.parameterTypes.isEmpty() && (it.name == "get" + name.replaceFirstChar { c -> c.uppercase() } || it.name == name)
-                }
-                val result = method?.invoke(instance)
-                if (result is Number) return result.toFloat()
-            } catch (_: Throwable) { }
-        }
-        return 0f
-    }
-
-    private fun hasMember(instance: Any, vararg names: String): Boolean = names.any { name ->
-        try { instance.javaClass.getDeclaredField(name); true } catch (_: Throwable) {
-            instance.javaClass.methods.any { it.parameterTypes.isEmpty() && it.name.equals("get" + name.replaceFirstChar { c -> c.uppercase() }, true) }
-        }
-    }
-
-    private fun animatePosition(next: Float) {
-        positionAnimator?.cancel()
-        val shouldSnap = reducedMotion || !isAttachedToWindow || isReducedMotionRequested(context)
-        val baseSpec = (positionSpec ?: rj.wearui.WearMotionSpec.StandardDecelerate)
-            .withReducedMotion(shouldSnap)
-        if (baseSpec.durationMillis == 0L) {
-            position = next
-            updatePositionIfPixelChanged()
-            return
-        }
-        positionAnimator = ValueAnimator.ofFloat(position, next).apply {
-            duration = baseSpec.durationMillis
-            interpolator = baseSpec.interpolator
-            addUpdateListener {
-                position = it.animatedValue as Float
-                updatePositionIfPixelChanged()
-            }
-            start()
-        }
-    }
-
-    private fun updatePositionIfPixelChanged() {
-        val px = (position * resources.displayMetrics.density * 100f).toInt()
-        if (px != lastRoundedPosition) {
-            lastRoundedPosition = px
-            invalidate()
-        }
-    }
-
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = if (resources.displayMetrics.widthPixels >= dp(280f)) dp(6f) else dp(5f)
-        setMeasuredDimension(resolveSize(dp(24f), widthMeasureSpec), resolveSize(dp(50f), heightMeasureSpec))
+        val screenWidthDp = resources.configuration.screenWidthDp.coerceAtLeast(1)
+        val indicatorWidthDp = if (screenWidthDp >= LARGE_SCREEN_WIDTH_DP) 6 else 5
+        val paddingDp = 2
+        val indicatorHeightDp = 50
+        val radiusDp = screenWidthDp / 2f - paddingDp - indicatorWidthDp / 2f
+        val halfHeight = indicatorHeightDp / 2f
+        val projectionDp = radiusDp -
+            sqrt((radiusDp * radiusDp - halfHeight * halfHeight).coerceAtLeast(0f)) +
+            paddingDp + indicatorWidthDp
+        val density = resources.displayMetrics.density
+        val width = ceilPx(projectionDp * density)
+        val height = ceilPx((indicatorHeightDp + indicatorWidthDp) * density)
+        setMeasuredDimension(resolveSize(width, widthMeasureSpec), resolveSize(height, heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width == 0 || height == 0 || alpha <= 0f) return
-        val large = resources.displayMetrics.widthPixels >= dp(280f)
-        val stroke = dp(if (large) 6f else 5f).toFloat()
-        paint.strokeWidth = stroke
-        val indicatorColor = color("indicatorColor", Color.WHITE)
-        // Inactive (top/bottom) segments use a track/background role; reflect over the provided
-        // colors so a trackColor-like field is honored when present, else a dimmed background.
-        val trackColor = color("trackColor", Color.argb(97, 255, 255, 255))
-        paint.alpha = if (isEnabled) 255 else 97
-        val edge = dp(4f).toFloat()
-        val sideRight = layoutDirection != LAYOUT_DIRECTION_RTL
-        val centerX = if (sideRight) width.toFloat() - edge - stroke / 2f else edge + stroke / 2f
-        val diameter = max(width, height).toFloat()
-        val radius = max(stroke, diameter / 2f - edge - stroke / 2f)
-        val centerY = height / 2f
-        val oval = RectF(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
-        val fullSweep = 72f
+
+        val configuration = resources.configuration
+        val density = resources.displayMetrics.density
+        val screenWidthDp = configuration.screenWidthDp.coerceAtLeast(1)
+        val indicatorWidthDp = if (screenWidthDp >= LARGE_SCREEN_WIDTH_DP) 6 else 5
+        val paddingHorizontalPx = dp(2f)
+        val indicatorWidthPx = dp(indicatorWidthDp.toFloat())
+        val gapHeightPx = dp(3f)
+        val diameter = screenWidthDp * density
+        val usableRadius = diameter / 2f - paddingHorizontalPx
+        val arcRadius = usableRadius - indicatorWidthPx / 2f
+        val sweepDegrees = pixelsToDegrees(dp(50f), usableRadius)
+        val gapSweep = pixelsToDegrees(indicatorWidthPx + gapHeightPx, usableRadius)
+
+        val indicatorOnTheRight = layoutDirection != LAYOUT_DIRECTION_RTL
         val visualPosition = if (reverseDirection) 1f - position else position
-        val centerAngle = 270f + (visualPosition - .5f) * (fullSweep - 18f)
-        val visibleLength = thumbLength * 24f * (if (reducedMotion) 1f else 1f - abs(overscroll).coerceAtMost(.10f))
-        val start = centerAngle - visibleLength / 2f
-        val gap = 2f
-        val segment = max(1f, (visibleLength - gap * 2f) / 3f)
-        repeat(3) { index ->
-            paint.color = if (index == 1) indicatorColor else trackColor
-            canvas.drawArc(oval, start + index * (segment + gap), segment, false, paint)
+        val indicatorStart = visualPosition * (1f - sizeFraction)
+        val startAngleOffset = if (indicatorOnTheRight) 0f else 180f
+        val startTopArc = startAngleOffset - sweepDegrees / 2f
+        val sweepTopArc = sweepDegrees * indicatorStart
+        val startMidArc = startTopArc + sweepTopArc
+        val sweepMidArc = sweepDegrees * sizeFraction
+        val startBottomArc = startMidArc + sweepMidArc
+        val sweepBottomArc = sweepDegrees * (1f - sizeFraction - indicatorStart)
+
+        val arcSize = RectF(
+            0f,
+            0f,
+            diameter - 2f * paddingHorizontalPx - indicatorWidthPx,
+            diameter - 2f * paddingHorizontalPx - indicatorWidthPx
+        )
+        arcSize.offsetTo(
+            indicatorWidthPx / 2f + if (indicatorOnTheRight) width - diameter + paddingHorizontalPx else paddingHorizontalPx,
+            (height - diameter) / 2f + paddingHorizontalPx + indicatorWidthPx / 2f
+        )
+
+        val indicatorColor = resolvedColors().first
+        val trackColor = resolvedColors().second
+        drawSegment(canvas, arcSize, arcRadius, startTopArc, sweepTopArc, trackColor, indicatorWidthPx, gapSweep)
+        drawSegment(canvas, arcSize, arcRadius, startMidArc, sweepMidArc, indicatorColor, indicatorWidthPx, gapSweep)
+        drawSegment(canvas, arcSize, arcRadius, startBottomArc, sweepBottomArc, trackColor, indicatorWidthPx, gapSweep)
+    }
+
+    private fun drawSegment(
+        canvas: Canvas,
+        oval: RectF,
+        radius: Float,
+        startAngle: Float,
+        sweep: Float,
+        color: Int,
+        indicatorWidthPx: Float,
+        gapSweep: Float
+    ) {
+        paint.color = color
+        paint.alpha = if (isEnabled) 255 else 97
+        paint.strokeWidth = indicatorWidthPx
+        if (sweep <= gapSweep) {
+            // Compose collapses a segment smaller than its gap into a gradually shrinking dot.
+            val fraction = if (gapSweep <= 0f) 1f else (sweep / gapSweep).coerceIn(0f, 1f)
+            val dotRadius = indicatorWidthPx / 2f * fraction
+            if (dotRadius <= 0f) return
+            val angle = Math.toRadians(((startAngle + sweep / 2f).toDouble()))
+            val centerX = oval.centerX() + radius * cos(angle).toFloat()
+            val centerY = oval.centerY() + radius * sin(angle).toFloat()
+            paint.alpha = (paint.alpha * fraction).toInt().coerceIn(0, 255)
+            canvas.drawCircle(centerX, centerY, dotRadius, paint)
+        } else {
+            canvas.drawArc(oval, startAngle + gapSweep / 2f, sweep - gapSweep, false, paint)
         }
     }
 
-    private fun color(name: String, fallback: Int): Int {
-        val source = colors ?: return fallback
-        return try {
-            val field = source.javaClass.getDeclaredField(name)
-            field.isAccessible = true
-            (field.get(source) as? Number)?.toInt() ?: fallback
-        } catch (_: Throwable) { fallback }
+    private fun animateTo(nextPosition: Float, nextSize: Float) {
+        val startPosition = position
+        val startSize = sizeFraction
+        val spec = positionSpec.withReducedMotion(reducedMotion || !isAttachedToWindow || isReducedMotionRequested(context))
+        if (spec.durationMillis <= 0L) {
+            position = nextPosition
+            sizeFraction = nextSize
+            invalidate()
+            return
+        }
+        cancelAnimation()
+        animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = spec.durationMillis
+            interpolator = spec.interpolator
+            addUpdateListener { animation ->
+                val fraction = animation.animatedValue as Float
+                position = startPosition + (nextPosition - startPosition) * fraction
+                sizeFraction = startSize + (nextSize - startSize) * fraction
+                invalidate()
+            }
+            start()
+        }
     }
+
+    private fun cancelAnimation() {
+        animator?.cancel()
+        animator = null
+    }
+
+    private fun resolvedColors(): Pair<Int, Int> {
+        val custom = colors
+        val indicator = custom?.indicatorColor ?: Color.WHITE
+        val track = custom?.trackColor ?: 0xFF333333.toInt()
+        return indicator to track
+    }
+
+    private fun pixelsToDegrees(heightPx: Float, radiusPx: Float): Float =
+        2f * Math.toDegrees(asin((heightPx / 2f / radiusPx.coerceAtLeast(1f)).toDouble()).toDouble()).toFloat()
+
+    private fun ceilPx(value: Float): Int = (value + 0.5f).toInt()
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
     override fun setEnabled(enabled: Boolean) {
         super.setEnabled(enabled)
-        if (!enabled) positionAnimator?.cancel()
+        if (!enabled) cancelAnimation()
         invalidate()
     }
 
     override fun onDetachedFromWindow() {
-        positionAnimator?.cancel()
-        positionAnimator = null
+        cancelAnimation()
         super.onDetachedFromWindow()
     }
 
     override fun onSaveInstanceState(): Parcelable {
-        val state = Bundle()
-        state.putParcelable("super", super.onSaveInstanceState())
-        state.putFloat("position", position)
-        state.putBoolean("reverse", reverseDirection)
-        return state
+        return Bundle().apply {
+            putParcelable("super", super.onSaveInstanceState())
+            putFloat("position", position)
+            putFloat("size", sizeFraction)
+            putBoolean("reverse", reverseDirection)
+        }
     }
 
+    @Suppress("DEPRECATION")
     override fun onRestoreInstanceState(state: Parcelable?) {
         if (state is Bundle) {
             super.onRestoreInstanceState(state.getParcelable("super"))
-            position = state.getFloat("position", .5f)
-            targetPosition = position
+            position = state.getFloat("position", 0f)
+            sizeFraction = state.getFloat("size", 0f)
             reverseDirection = state.getBoolean("reverse", false)
-        } else super.onRestoreInstanceState(state)
+        } else {
+            super.onRestoreInstanceState(state)
+        }
     }
 
-    private fun dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+    private companion object {
+        const val LARGE_SCREEN_WIDTH_DP = 225
+        const val MIN_SIZE_FRACTION = 0.30f
+        const val MAX_SIZE_FRACTION = 0.70f
+    }
 }

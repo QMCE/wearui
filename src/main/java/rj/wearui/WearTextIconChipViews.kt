@@ -12,6 +12,7 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Parcel
 import android.os.Parcelable
@@ -369,7 +370,6 @@ open class WearControlFrame(context: Context, attrs: AttributeSet?, defStyleAttr
     protected fun updateSurface() {
         val base = when {
             !isEnabled -> withAlpha(containerColor, .12f)
-            isPressed -> blend(containerColor, Color.BLACK, .16f)
             isActivated || isSelected -> blend(containerColor, Color.WHITE, .08f)
             else -> containerColor
         }
@@ -380,7 +380,17 @@ open class WearControlFrame(context: Context, attrs: AttributeSet?, defStyleAttr
             setColor(base)
             if (borderWidthPx > 0) setStroke(borderWidthPx, if (isEnabled) borderColor else withAlpha(borderColor, .20f))
         }
-        background = drawable
+        // Wear Compose Material3's default bounded ripple uses content color at alpha .10.
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(Color.WHITE)
+        }
+        background = RippleDrawable(
+            android.content.res.ColorStateList.valueOf(withAlpha(contentColor, .10f)),
+            drawable,
+            mask
+        )
         alpha = if (isEnabled) 1f else .92f
     }
 

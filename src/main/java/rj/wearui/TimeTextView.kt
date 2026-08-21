@@ -28,7 +28,17 @@ class TimeTextView : View {
     private var reducedMotion = false
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        typeface = android.graphics.Typeface.create("roboto-flex", android.graphics.Typeface.NORMAL)
+        if (Build.VERSION.SDK_INT >= 26) {
+            val applied = runCatching {
+                setFontVariationSettings("'wght' 599, 'wdth' 100")
+            }.getOrDefault(false)
+            if (!applied) {
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            }
+        } else {
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        }
     }
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val arcPath = Path()
