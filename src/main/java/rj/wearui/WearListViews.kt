@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.animation.PathInterpolator
 import android.widget.OverScroller
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import java.util.ArrayDeque
@@ -224,9 +225,22 @@ abstract class AdapterColumnView(
     private fun totalContentHeight(): Int {
         val count = itemAdapter?.getCount() ?: 0
         if (count == 0) return topInset + bottomInset
+        // Use the last laid-out slot heights where available. Transformed lists reserve less than
+        // the unscaled child height near the edges, exactly like Compose's transformedHeight.
         var sum = topInset + bottomInset
-        for (i in 0 until count) sum += getEstimatedHeight(i)
-        sum += max(0, count - 1) * spacingPx
+        var y = topInset
+        var first = true
+        for (i in 0 until count) {
+            val measured = getEstimatedHeight(i)
+            val slot = activeViews[i]?.let { transformedSlotHeight(it, y) } ?: measured
+            sum += slot
+            if (!first) {
+                sum += spacingPx
+                y += spacingPx
+            }
+            y += slot
+            first = false
+        }
         // If centered and content smaller than viewport, total is viewport for centering math
         if (centerContent && viewportHeight > sum) return viewportHeight
         return sum
@@ -253,8 +267,9 @@ abstract class AdapterColumnView(
 
     override fun scrollBy(x: Int, y: Int) {
         if (y != 0) {
-            pendingScrollY += y
-            consumePendingScrollOnAnimation()
+            // Touch drags and rotary ticks must be applied synchronously. Queueing them to the
+            // next frame lets repeated deltas accumulate and then land as a visible jump.
+            scrollTo(0, scrollY + y)
         }
     }
 
@@ -283,6 +298,12 @@ abstract class AdapterColumnView(
         for (i in 0 until first) y += getEstimatedHeight(i) + spacingPx
         return y
     }
+
+    /**
+     * Height reserved by the list for a child. Visual-only subclasses keep the full measured height;
+     * transforming lists override this to mirror Wear Compose's `transformedHeight`.
+     */
+    protected open fun transformedSlotHeight(child: View, top: Int): Int = child.measuredHeight
 
     private fun contentHeight(): Int = totalContentHeight()
 
@@ -329,7 +350,8 @@ abstract class AdapterColumnView(
                 heightCache[pos] = child.measuredHeight
             }
         }
-        // Layout children sequentially starting from window start offset minus scrollY
+        // Layout children sequentially. The advance height is the transformed slot height, while
+        // each child keeps its full measured bounds; its graphics transform then fills that slot.
         var y = windowStartOffset() - scrollY
         // Apply centering if content shorter than viewport
         if (centerContent) {
@@ -350,7 +372,7 @@ abstract class AdapterColumnView(
             // layout from bottom. Instead, we keep forward layout but scroll range inverted? For now keep forward semantics;
             // reverse flag mainly affects scroll direction and position mapping, not visual stacking here.
             child.layout(leftInset, y, leftInset + w, y + child.measuredHeight)
-            y += child.measuredHeight + spacingPx
+            y += transformedSlotHeight(child, y) + spacingPx
         }
         clampScroll()
         applyTransforms()
@@ -470,7 +492,7 @@ abstract class AdapterColumnView(
                     val child = activeViews[pos] ?: continue
                     val w = max(0, width - leftInset - rightInset)
                     child.layout(leftInset, curY, leftInset + w, curY + child.measuredHeight)
-                    curY += child.measuredHeight + spacingPx
+                    curY += transformedSlotHeight(child, curY) + spacingPx
                 }
             }
             applyTransforms()
@@ -598,7 +620,9 @@ abstract class AdapterColumnView(
                 if (event.actionMasked == MotionEvent.ACTION_UP && dragging) {
                     velocityTracker?.computeCurrentVelocity(1000, 8000f)
                     var vy = velocityTracker?.yVelocity ?: 0f
-                    vy = (vy * 0.32f).coerceIn(-3600f, 3600f)
+                    // Keep Wear's deliberately short, non-snappy fling but do not amplify a
+                    // slow finger gesture; the cap is density-independent enough for watches.
+                    vy = (vy * 0.24f).coerceIn(-2600f, 2600f)
                     if (abs(vy) > 50f) scroller.fling(0, scrollY, 0, -vy.toInt(), 0, 0, 0, getScrollRangePx())
                 }
                 dragging = false
@@ -696,22 +720,50 @@ class ScalingLazyColumnView : AdapterColumnView {
     }
 }
 
+/** Responsive parameters used by Wear Compose Material3's default TransformationSpec. */
+private data class ResponsiveTransformationParams(
+    val minElementHeightFraction: Float,
+    val maxElementHeightFraction: Float,
+    val minTransitionAreaFraction: Float,
+    val maxTransitionAreaFraction: Float,
+    val edgeScale: Float,
+    val edgeAlpha: Float
+)
+
 /** Lazy column with a less aggressive transform suitable for text-heavy screens. */
 class TransformingLazyColumnView : AdapterColumnView {
     constructor(context: Context) : super(context)
     constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
     constructor(context: Context, attrs: AttributeSet?, defStyleAttr: Int) : super(context, attrs, defStyleAttr)
 
-    // Vendored ResponsiveTransformationSpec for Transforming: same family as
-    // Scaling (small 0.70, large 0.60 with 0.50 alpha, 0.3/0,0.7/1 easing).
-    // Previous native default 0.82/0.65 linear was too shallow; align to
-    // vendored 0.70 edge so both lazy variants share the spec source.
-    var edgeScale: Float = 0.70f
-        set(value) { field = value.coerceIn(0.5f, 1f); invalidate() }
-    var edgeAlpha: Float = 0.50f
-        set(value) { field = value.coerceIn(0.1f, 1f); invalidate() }
-
     private val transformEasing = PathInterpolator(0.3f, 0f, 0.7f, 1f)
+
+    private fun transformationScale(child: View, top: Int): Float {
+        val viewportHeight = max(1f, height.toFloat())
+        val topFraction = top / viewportHeight
+        val bottomFraction = (top + child.measuredHeight) / viewportHeight
+        val itemHeightFraction = bottomFraction - topFraction
+        val spec = responsiveTransformationParams()
+        val sizeRatio = ((itemHeightFraction - spec.minElementHeightFraction) /
+            (spec.maxElementHeightFraction - spec.minElementHeightFraction)).coerceIn(0f, 1f)
+        val scalingLine = lerp(
+            spec.minTransitionAreaFraction,
+            spec.maxTransitionAreaFraction,
+            sizeRatio
+        ).coerceAtMost((1f + itemHeightFraction) / 2f).coerceAtLeast(0.01f)
+        val topTransition = bottomFraction < 1f - topFraction
+        val transitionProgress = if (topTransition) {
+            bottomFraction / scalingLine
+        } else {
+            (1f - topFraction) / scalingLine
+        }.coerceIn(0f, 1f)
+        return lerp(spec.edgeScale, 1f, transformEasing.getInterpolation(transitionProgress))
+    }
+
+    override fun transformedSlotHeight(child: View, top: Int): Int {
+        if (!scalingEnabled()) return child.measuredHeight
+        return ceil(child.measuredHeight * transformationScale(child, top)).toInt()
+    }
 
     override fun transformChild(child: View, distanceFromCenter: Float, viewportCenter: Float) {
         if (!scalingEnabled()) {
@@ -725,22 +777,58 @@ class TransformingLazyColumnView : AdapterColumnView {
             child.visibility = VISIBLE
             return
         }
-        val rawFraction = (abs(distanceFromCenter) / max(1f, viewportCenter)).coerceIn(0f, 1f)
-        val eased = transformEasing.getInterpolation(rawFraction)
-        val scale = 1f - (1f - edgeScale) * eased
+
+        // Port of ResponsiveTransformationSpecImpl.TransitionAreaProgress. TransformingLazyColumn's
+        // progress is based on item edges relative to the full list viewport, not merely on the
+        // distance from the viewport center.
+        val spec = responsiveTransformationParams()
+        val scale = transformationScale(child, child.top)
+        val eased = ((scale - spec.edgeScale) / (1f - spec.edgeScale)).coerceIn(0f, 1f)
         // Vendored transformOrigin is center; native pivot centered matches
         // GraphicsLayerScope default so scale shrinks symmetrically.
         child.pivotX = child.measuredWidth / 2f
         child.pivotY = child.measuredHeight / 2f
         child.scaleX = scale
         child.scaleY = scale
-        child.alpha = 1f - (1f - edgeAlpha) * eased
+        child.alpha = lerp(spec.edgeAlpha, 1f, eased)
         // Vendored container translation: -height*(1-scale)/2 (see
         // ResponsiveTransformationSpecImpl.applyContainerTransformation).
         // Replaces the prior -distance*0.035 approximation.
         child.translationY = -child.measuredHeight * (1f - scale) / 2f
         child.visibility = if (child.alpha < 0.02f) INVISIBLE else VISIBLE
     }
+
+    /** Small-screen and large-screen defaults, linearly interpolated exactly like the Compose API. */
+    private fun responsiveTransformationParams(): ResponsiveTransformationParams {
+        val screenDp = resources.configuration.screenHeightDp.toFloat()
+        val small = ResponsiveTransformationParams(
+            minElementHeightFraction = 0.20f,
+            maxElementHeightFraction = 0.60f,
+            minTransitionAreaFraction = 0.35f,
+            maxTransitionAreaFraction = 0.55f,
+            edgeScale = 0.70f,
+            edgeAlpha = 0.50f
+        )
+        val large = ResponsiveTransformationParams(
+            minElementHeightFraction = 0.15f,
+            maxElementHeightFraction = 0.45f,
+            minTransitionAreaFraction = 0.40f,
+            maxTransitionAreaFraction = 0.60f,
+            edgeScale = 0.60f,
+            edgeAlpha = 0.50f
+        )
+        val fraction = ((screenDp - 192f) / 48f).coerceIn(0f, 1f)
+        return ResponsiveTransformationParams(
+            minElementHeightFraction = lerp(small.minElementHeightFraction, large.minElementHeightFraction, fraction),
+            maxElementHeightFraction = lerp(small.maxElementHeightFraction, large.maxElementHeightFraction, fraction),
+            minTransitionAreaFraction = lerp(small.minTransitionAreaFraction, large.minTransitionAreaFraction, fraction),
+            maxTransitionAreaFraction = lerp(small.maxTransitionAreaFraction, large.maxTransitionAreaFraction, fraction),
+            edgeScale = lerp(small.edgeScale, large.edgeScale, fraction),
+            edgeAlpha = lerp(small.edgeAlpha, large.edgeAlpha, fraction)
+        )
+    }
+
+    private fun lerp(start: Float, stop: Float, fraction: Float): Float = start + (stop - start) * fraction
 }
 
 /** Standard adapter-backed list with no visual transformation. */

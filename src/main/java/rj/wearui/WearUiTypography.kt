@@ -85,14 +85,27 @@ data class WearUiTypography(
 
         val desiredWeight = if (useProminentWeight) token.prominentWeight else token.weight
         if (Build.VERSION.SDK_INT >= 26) {
-            try {
+            val family = runCatching { Typeface.create("roboto-flex", Typeface.NORMAL) }
+                .getOrDefault(Typeface.create("sans-serif", Typeface.NORMAL))
+            textView.typeface = family
+            val applied = try {
                 textView.fontFeatureSettings = null
+                textView.setTypeface(family)
                 textView.setFontVariationSettings("'wght' $desiredWeight, 'wdth' ${token.widthPercent}")
             } catch (_: RuntimeException) {
+                false
+            }
+            if (applied) {
+                // A successful variable-font request already carries the width axis. Adding
+                // textScaleX would widen the glyphs twice.
+                textView.textScaleX = 1f
+            } else {
                 textView.typeface = fallbackTypeface(desiredWeight)
+                textView.textScaleX = token.widthPercent / 100f
             }
         } else {
             textView.typeface = fallbackTypeface(desiredWeight)
+            textView.textScaleX = token.widthPercent / 100f
         }
 
         // Compose uses lineHeightStyle centered (extra distributed top+bottom). TextView's
@@ -118,7 +131,11 @@ data class WearUiTypography(
     }
 
     private fun fallbackTypeface(weight: Int): Typeface {
-        return Typeface.create("sans-serif", if (weight >= 650) Typeface.BOLD else Typeface.NORMAL)
+        return when {
+            weight >= 650 -> Typeface.create("sans-serif", Typeface.BOLD)
+            weight >= 450 -> Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            else -> Typeface.create("sans-serif", Typeface.NORMAL)
+        }
     }
 
     companion object {

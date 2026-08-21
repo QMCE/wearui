@@ -37,6 +37,7 @@ import kotlin.math.min
 /** A native text view configured from the Wear UI typography roles. */
 open class WearTextView : TextView {
     private var typographyRole: WearTypographyRole? = null
+    private var lineHeightShiftPx = 0f
 
     constructor(context: Context) : this(context, null)
     constructor(context: Context, attrs: AttributeSet?) : this(context, attrs, 0)
@@ -49,34 +50,36 @@ open class WearTextView : TextView {
     fun setTypographyRole(role: WearTypographyRole?) {
         typographyRole = role
         if (role == null) return
-        // Direct enum dispatch — no String.contains. Single source of truth is
-        // WearUiTypography.defaultTokens() (dimensions) and WearComponentTokens.kt
-        // (role assignments). See WearTypographyRole.
+        // Delegate to the exact token applier so size, weight, variable width, tracking,
+        // line height and centered line metrics all come from one source of truth.
         val token = WearUiTypography.Default.token(role)
-        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, token.sizeSp)
-        letterSpacing = if (token.sizeSp == 0f) 0f else token.trackingSp / token.sizeSp
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        // Centered line-height like Compose (TextStyle.lineHeight + lineHeightStyle centered).
-        // TextView default fallbackLineSpacing adds extra below baseline → upward visual bias.
-        // On API 28+ disable fallback and set exact lineHeight so extra is distributed top+bottom.
-        if (android.os.Build.VERSION.SDK_INT >= 28) {
-            try {
-                isFallbackLineSpacing = false
-                lineHeight = (token.lineHeightSp * resources.displayMetrics.scaledDensity + 0.5f).toInt()
-            } catch (_: Throwable) {
-                val extra = max(0f, (token.lineHeightSp - token.sizeSp) * resources.displayMetrics.scaledDensity)
-                setLineSpacing(extra, 1f)
-            }
-        } else {
-            val extra = max(0f, (token.lineHeightSp - token.sizeSp) * resources.displayMetrics.scaledDensity)
-            setLineSpacing(extra, 1f)
-        }
-        // Ensure vertical centering of the line block inside the view bounds
-        // (includeFontPadding already false in ctor, gravity CENTER_VERTICAL keeps glyph block centered).
-        if ((gravity and Gravity.VERTICAL_GRAVITY_MASK) == 0) gravity = gravity or Gravity.CENTER_VERTICAL
+        WearUiTypography.Default.applyTo(this, role)
+        computeComposeLineHeightShift(token.lineHeightSp, token.sizeSp)
     }
 
     fun getTypographyRole(): WearTypographyRole? = typographyRole
+
+    override fun onDraw(canvas: Canvas) {
+        if (lineHeightShiftPx != 0f) {
+            canvas.translate(0f, lineHeightShiftPx)
+            super.onDraw(canvas)
+            canvas.translate(0f, -lineHeightShiftPx)
+        } else {
+            super.onDraw(canvas)
+        }
+    }
+
+    /**
+     * TextView puts lineHeight expansion below the baseline; Compose's default Center
+     * LineHeightStyle splits it above/below. Shift drawing down by half the extra leading.
+     */
+    private fun computeComposeLineHeightShift(lineHeightSp: Float, textSizeSp: Float) {
+        val metrics = paint.fontMetrics
+        val naturalLineHeight = metrics.descent - metrics.ascent
+        val desiredLineHeight = lineHeightSp * resources.displayMetrics.scaledDensity
+        lineHeightShiftPx = ((desiredLineHeight - naturalLineHeight) / 2f).coerceAtLeast(0f)
+        if (textSizeSp <= 0f) lineHeightShiftPx = 0f
+    }
 
     fun setTextColorInt(color: Int) {
         setTextColor(color)

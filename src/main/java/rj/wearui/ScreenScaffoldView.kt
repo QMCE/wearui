@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.PathInterpolator
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 
 /** Full-screen round-aware scaffold that layers scroll content, time, indicator and edge action. */
@@ -144,7 +145,8 @@ class ScreenScaffoldView : ViewGroup, ScreenStageProvider {
         )
         timeText?.let {
             val x = (width - it.measuredWidth) / 2
-            val y = dp(4f)
+            // TimeTextDefaults.ContentPadding uses PaddingDefaults.edgePadding (2dp).
+            val y = dp(2f)
             it.layout(x, y, x + it.measuredWidth, y + it.measuredHeight)
         }
         scrollIndicator?.let {
@@ -292,10 +294,15 @@ class ScreenScaffoldView : ViewGroup, ScreenStageProvider {
         } else super.onRestoreInstanceState(state)
     }
 
-    private fun resolvedLeftInset(): Int = if (contentLeft >= 0) contentLeft else (width * .052f).toInt()
-    private fun resolvedRightInset(): Int = if (contentRight >= 0) contentRight else (width * .052f).toInt()
-    private fun resolvedTopInset(): Int = if (contentTop >= 0) contentTop else (minOf(width, height) * .10f).toInt()
-    private fun resolvedBottomInset(): Int = if (contentBottom >= 0) contentBottom else (minOf(width, height) * .10f).toInt()
+    private fun resolvedLeftInset(): Int = if (contentLeft >= 0) contentLeft else ceilInsetDp(width, 5.2f)
+    private fun resolvedRightInset(): Int = if (contentRight >= 0) contentRight else ceilInsetDp(width, 5.2f)
+    private fun resolvedTopInset(): Int = if (contentTop >= 0) contentTop else ceilInsetDp(height, 10f)
+    private fun resolvedBottomInset(): Int = if (contentBottom >= 0) contentBottom else ceilInsetDp(height, 10f)
+    private fun ceilInsetDp(sizePx: Int, percent: Float): Int {
+        val density = resources.displayMetrics.density
+        val sizeDp = sizePx / density
+        return ceil(ceil(sizeDp * percent / 100f) * density).toInt()
+    }
     private fun resolvedEdgeGap(): Int = (if (edgeSpacing >= 0) edgeSpacing else dp(16f)).coerceAtLeast(dp(3f))
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density + .5f).toInt()
 }

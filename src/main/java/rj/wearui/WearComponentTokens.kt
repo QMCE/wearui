@@ -35,6 +35,7 @@ object ButtonTokens {
 
     /** Content padding inside the button container. */
     const val ContentPaddingStartDp: Float = 14f
+    const val ContentPaddingExtraLargeIconStartDp: Float = 8f
     const val ContentPaddingTopDp: Float = 6f
     const val ContentPaddingEndDp: Float = 14f
     const val ContentPaddingBottomDp: Float = 6f
@@ -288,4 +289,3 @@ object SwitchTokens {
     const val BorderWidthDp: Float = 2f
     const val AnimationDurationMillis: Long = 160L
 }
-

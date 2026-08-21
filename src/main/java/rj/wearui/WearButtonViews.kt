@@ -47,7 +47,6 @@ class ButtonContent(context: Context) : LinearLayout(context) {
         text.gravity = Gravity.CENTER_VERTICAL or Gravity.START
         text.includeFontPadding = false
         // Explicitly center lineHeight block: fallbackLineSpacing false already in WearTextView, ensure vertical gravity and no extra top bias
-        text.setPadding(0, 0, 0, dp(1)) // 1px nudge down to counter font ascent bias (visual centering)
         text.maxLines = 3
         text.ellipsize = android.text.TextUtils.TruncateAt.END
         text.setTextColor(WearColorScheme.Dark.onPrimary) // WearButtonColors.contentColor -> onPrimary (TokenBridge supplies M3.onPrimary)
